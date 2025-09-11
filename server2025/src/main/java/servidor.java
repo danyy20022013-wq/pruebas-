@@ -25,12 +25,14 @@ public class servidor {
         FIN
     }
 
+    // Archivo donde se guardan las credenciales
     private static final String ARCHIVO_CREDENCIALES = "credenciales.txt";
     private static final Map<String, String> credenciales = new HashMap<>();
 
     public static void main(String[] args) {
         cargarCredenciales();
         int puerto = 5050;
+
         try (ServerSocket servidor = new ServerSocket(puerto)) {
             System.out.println("Servidor iniciado. Esperando cliente...");
 
@@ -85,6 +87,7 @@ public class servidor {
                         break;
 
                     case CREAR_CUENTA:
+                        salida.println("Ingresa tu nuevo nombre de usuario:");
                         String nuevoUsuario = entrada.readLine();
                         salida.println("Ingresa la contrasena para " + nuevoUsuario + ":");
                         String nuevaContrasena = entrada.readLine();
@@ -145,12 +148,12 @@ public class servidor {
                         try {
                             numero = Integer.parseInt(mensaje);
                         } catch (NumberFormatException e) {
-                            salida.println("Caracter no valido. Ingresa un numero entre 1 y 10.");
-                            continue; // No consume un intento si el caracter es invalido
+                            salida.println("Caracter no válido. Ingresa un numero entre 1 y 10.");
+                            continue; // No consume un intento si el caracter es inválido
                         }
                         if (numero < 1 || numero > 10) {
-                            salida.println("El numero debe estar entre 1 y 10.");
-                            continue; // No consume un intento si el numero esta fuera de rango
+                            salida.println("El número debe estar entre 1 y 10.");
+                            continue; // No consume un intento si el número está fuera de rango
                         }
                         intentos++;
                         if (numero == numeroSecreto) {
@@ -158,9 +161,9 @@ public class servidor {
                         } else if (intentos >= 3) {
                             estado = Estado.PERDISTE;
                         } else if (numero < numeroSecreto) {
-                            salida.println("El numero es mayor. Te quedan " + (3 - intentos) + " intentos.");
+                            salida.println("El número es mayor. Te quedan " + (3 - intentos) + " intentos.");
                         } else { // numero > numeroSecreto
-                            salida.println("El numero es menor. Te quedan " + (3 - intentos) + " intentos.");
+                            salida.println("El número es menor. Te quedan " + (3 - intentos) + " intentos.");
                         }
                         break;
 
@@ -239,6 +242,7 @@ public class servidor {
         try (BufferedReader br = new BufferedReader(new FileReader(ARCHIVO_CREDENCIALES))) {
             String linea;
             while ((linea = br.readLine()) != null) {
+                if (linea.trim().isEmpty()) continue; // evita errores por líneas vacías
                 String[] partes = linea.split(":");
                 if (partes.length == 2) {
                     credenciales.put(partes[0].trim(), partes[1].trim());
@@ -246,7 +250,7 @@ public class servidor {
             }
             System.out.println("Credenciales cargadas desde " + ARCHIVO_CREDENCIALES);
         } catch (FileNotFoundException e) {
-            System.out.println("Archivo de credenciales no encontrado. Se creara uno nuevo.");
+            System.out.println("Archivo de credenciales no encontrado. Se creará uno nuevo.");
         } catch (IOException e) {
             e.printStackTrace();
         }
