@@ -76,13 +76,6 @@ public class cliente {
         }
     }
 
-    /**
-     * Maneja la lógica para el juego de adivinanza.
-     * @param entrada El BufferedReader para leer del servidor.
-     * @param salida El PrintWriter para escribir en el servidor.
-     * @param scanner El Scanner para obtener la entrada del usuario.
-     * @throws IOException si ocurre un error de E/S.
-     */
     private static void handleGame(BufferedReader entrada, PrintWriter salida, Scanner scanner) throws IOException {
         String mensajeServidor;
         while (true) {
