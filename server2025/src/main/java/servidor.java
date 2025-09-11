@@ -1,12 +1,13 @@
 import java.io.*;
-import java.io.*;
 import java.net.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
+import java.util.Scanner;
 
 public class servidor {
 
+    // Enum para controlar los estados del servidor
     enum Estado {
         INICIO,
         RECIBIR_USUARIO,
@@ -14,12 +15,13 @@ public class servidor {
         AUTENTICACION_EXITOSA,
         CREAR_CUENTA,
         AUTENTICACION_FALLIDA,
-        // Nuevos estados para el juego
+        MENU_PRINCIPAL,
         INICIO_JUEGO,
         JUGANDO,
         GANASTE,
         PERDISTE,
         PREGUNTAR_REINICIO,
+        CHAT,
         FIN
     }
 
@@ -37,6 +39,7 @@ public class servidor {
 
             BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             PrintWriter salida = new PrintWriter(socket.getOutputStream(), true);
+            Scanner scannerServidor = new Scanner(System.in); // Para que el servidor pueda escribir mensajes
 
             Estado estado = Estado.INICIO;
             String usuarioActual = "";
@@ -51,10 +54,12 @@ public class servidor {
                         estado = Estado.RECIBIR_USUARIO;
                         break;
 
-                    // ... (Casos de login y creacion de cuenta, sin cambios) ...
                     case RECIBIR_USUARIO:
                         usuarioActual = entrada.readLine();
-                        if (usuarioActual == null) { estado = Estado.FIN; break; }
+                        if (usuarioActual == null) {
+                            estado = Estado.FIN;
+                            break;
+                        }
                         if (usuarioActual.equalsIgnoreCase("nuevo")) {
                             salida.println("Ingresa tu nuevo nombre de usuario:");
                             estado = Estado.CREAR_CUENTA;
@@ -68,7 +73,10 @@ public class servidor {
 
                     case RECIBIR_CONTRASENA:
                         String contrasena = entrada.readLine();
-                        if (contrasena == null) { estado = Estado.FIN; break; }
+                        if (contrasena == null) {
+                            estado = Estado.FIN;
+                            break;
+                        }
                         if (credenciales.get(usuarioActual).equals(contrasena)) {
                             estado = Estado.AUTENTICACION_EXITOSA;
                         } else {
@@ -99,22 +107,35 @@ public class servidor {
 
                     case AUTENTICACION_EXITOSA:
                         salida.println("¡Inicio de sesion exitoso! Bienvenido, " + usuarioActual + ".");
-                        estado = Estado.INICIO_JUEGO;
+                        estado = Estado.MENU_PRINCIPAL;
+                        break;
+
+                    case MENU_PRINCIPAL:
+                        salida.println("MENU PRINCIPAL\n1. Jugar a adivinar el numero\n2. Chatear\n\nIngresa tu eleccion (1 o 2):");
+                        String eleccion = entrada.readLine();
+                        if (eleccion == null) {
+                            estado = Estado.FIN;
+                            break;
+                        }
+
+                        if (eleccion.equals("1")) {
+                            estado = Estado.INICIO_JUEGO;
+                        } else if (eleccion.equals("2")) {
+                            estado = Estado.CHAT;
+                        } else {
+                            salida.println("Opcion no valida. Por favor, elige 1 o 2.");
+                        }
                         break;
 
                     // Lógica del juego
                     case INICIO_JUEGO:
                         numeroSecreto = rand.nextInt(10) + 1;
                         intentos = 0;
-                        salida.println("Bienvenido. Adivina un numero del 1 al 10. Tienes 3 intentos.");
+                        salida.println("INICIANDO JUEGO\nAdivina un numero del 1 al 10. Tienes 3 intentos.");
                         estado = Estado.JUGANDO;
                         break;
 
                     case JUGANDO:
-                        if (intentos >= 3) {
-                            estado = Estado.PERDISTE;
-                            break;
-                        }
                         String mensaje = entrada.readLine();
                         if (mensaje == null) {
                             estado = Estado.FIN;
@@ -125,49 +146,81 @@ public class servidor {
                             numero = Integer.parseInt(mensaje);
                         } catch (NumberFormatException e) {
                             salida.println("Caracter no valido. Ingresa un numero entre 1 y 10.");
-                            continue;
+                            continue; // No consume un intento si el caracter es invalido
                         }
                         if (numero < 1 || numero > 10) {
                             salida.println("El numero debe estar entre 1 y 10.");
-                            continue;
+                            continue; // No consume un intento si el numero esta fuera de rango
                         }
                         intentos++;
                         if (numero == numeroSecreto) {
                             estado = Estado.GANASTE;
+                        } else if (intentos >= 3) {
+                            estado = Estado.PERDISTE;
                         } else if (numero < numeroSecreto) {
-                            if (intentos < 3) {
-                                salida.println("El numero es mayor. Intentos restantes: " + (3 - intentos));
-                            } else {
-                                estado = Estado.PERDISTE;
-                            }
-                        } else {
-                            if (intentos < 3) {
-                                salida.println("El numero es menor. Intentos restantes: " + (3 - intentos));
-                            } else {
-                                estado = Estado.PERDISTE;
-                            }
+                            salida.println("El numero es mayor. Te quedan " + (3 - intentos) + " intentos.");
+                        } else { // numero > numeroSecreto
+                            salida.println("El numero es menor. Te quedan " + (3 - intentos) + " intentos.");
                         }
                         break;
 
                     case GANASTE:
                         salida.println("¡ADIVINASTE! El numero era: " + numeroSecreto);
-                        salida.println("¿Quieres jugar otra vez? (si/no)");
                         estado = Estado.PREGUNTAR_REINICIO;
                         break;
 
                     case PERDISTE:
                         salida.println("NO ADIVINASTE. El numero correcto era: " + numeroSecreto);
-                        salida.println("¿Quieres jugar otra vez? (si/no)");
                         estado = Estado.PREGUNTAR_REINICIO;
                         break;
 
                     case PREGUNTAR_REINICIO:
+                        salida.println("¿Quieres volver al menu principal? (si/no)");
                         String respuestaReinicio = entrada.readLine();
                         if (respuestaReinicio == null || respuestaReinicio.equalsIgnoreCase("no")) {
                             salida.println("Adios, " + usuarioActual + ". Gracias por jugar.");
                             estado = Estado.FIN;
                         } else {
-                            estado = Estado.INICIO_JUEGO;
+                            estado = Estado.MENU_PRINCIPAL;
+                        }
+                        break;
+
+                    // Lógica del chat
+                    case CHAT:
+                        salida.println("INICIANDO CHAT\nEscribe tus mensajes. Escribe 'salir' para volver al menu.");
+                        boolean chatActivo = true;
+                        while(chatActivo) {
+                            try {
+                                // Leer mensaje del cliente
+                                if (entrada.ready()) {
+                                    String mensajeCliente = entrada.readLine();
+                                    if (mensajeCliente == null || mensajeCliente.equalsIgnoreCase("salir")) {
+                                        salida.println("Regresando al menu principal.");
+                                        chatActivo = false;
+                                        estado = Estado.MENU_PRINCIPAL;
+                                        break;
+                                    }
+                                    System.out.println("Cliente: " + mensajeCliente);
+                                }
+
+                                // Leer mensaje del servidor para enviar
+                                if (System.in.available() > 0) {
+                                    String mensajeServidor = scannerServidor.nextLine();
+                                    if (mensajeServidor.equalsIgnoreCase("salir")) {
+                                        salida.println("Servidor ha terminado el chat. Regresando al menu principal.");
+                                        chatActivo = false;
+                                        estado = Estado.MENU_PRINCIPAL;
+                                        break;
+                                    }
+                                    salida.println("Servidor: " + mensajeServidor);
+                                }
+
+                                Thread.sleep(100); // Pausa para evitar un bucle de CPU intensivo
+                            } catch (IOException | InterruptedException e) {
+                                chatActivo = false;
+                                estado = Estado.FIN;
+                                System.err.println("Error en el chat: " + e.getMessage());
+                            }
                         }
                         break;
 
@@ -182,7 +235,6 @@ public class servidor {
         }
     }
 
-    // Métodos cargarCredenciales() y guardarCredenciales() sin cambios
     private static void cargarCredenciales() {
         try (BufferedReader br = new BufferedReader(new FileReader(ARCHIVO_CREDENCIALES))) {
             String linea;
