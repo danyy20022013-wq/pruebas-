@@ -50,28 +50,22 @@ public class cliente {
                 }
             }
 
-            // Bucle para el juego de adivinanza
-            while ((mensajeServidor = entrada.readLine()) != null) {
+            // Bucle principal para manejar el menu y las opciones después del login
+            while (true) {
+                mensajeServidor = entrada.readLine();
+                if (mensajeServidor == null || mensajeServidor.startsWith("Adios,")) break;
                 System.out.println(mensajeServidor);
 
-                if (mensajeServidor.startsWith("¡ADIVINASTE") || mensajeServidor.startsWith("NO ADIVINASTE")) {
-                    String preguntaReinicio = entrada.readLine();
-                    if (preguntaReinicio == null) break;
-                    System.out.println(preguntaReinicio);
+                if (mensajeServidor.startsWith("MENU PRINCIPAL")) {
                     System.out.print("> ");
-                    String decision = scanner.nextLine();
-                    salida.println(decision);
-                    if (decision.equalsIgnoreCase("no")) {
-                        String mensajeFinal = entrada.readLine();
-                        if (mensajeFinal != null) {
-                            System.out.println(mensajeFinal);
-                        }
-                        break;
+                    String eleccion = scanner.nextLine();
+                    salida.println(eleccion);
+
+                    if (eleccion.equals("1")) {
+                        handleGame(entrada, salida, scanner);
+                    } else if (eleccion.equals("2")) {
+                        handleChat(entrada, salida, scanner);
                     }
-                } else if (mensajeServidor.startsWith("El numero es") || mensajeServidor.startsWith("Bienvenido. Adivina") || mensajeServidor.startsWith("Caracter no valido")) {
-                    System.out.print("> ");
-                    String intento = scanner.nextLine();
-                    salida.println(intento);
                 }
             }
 
@@ -79,6 +73,79 @@ public class cliente {
 
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * Maneja la lógica para el juego de adivinanza.
+     * @param entrada El BufferedReader para leer del servidor.
+     * @param salida El PrintWriter para escribir en el servidor.
+     * @param scanner El Scanner para obtener la entrada del usuario.
+     * @throws IOException si ocurre un error de E/S.
+     */
+    private static void handleGame(BufferedReader entrada, PrintWriter salida, Scanner scanner) throws IOException {
+        String mensajeServidor;
+        while (true) {
+            mensajeServidor = entrada.readLine();
+            if (mensajeServidor == null) return;
+            System.out.println(mensajeServidor);
+
+            if (mensajeServidor.startsWith("¡ADIVINASTE") || mensajeServidor.startsWith("NO ADIVINASTE")) {
+                // Fin del juego, lee la pregunta para reiniciar y la maneja
+                mensajeServidor = entrada.readLine();
+                if (mensajeServidor == null) return;
+                System.out.println(mensajeServidor);
+                System.out.print("> ");
+                String decision = scanner.nextLine();
+                salida.println(decision);
+                if (decision.equalsIgnoreCase("no")) {
+                    // Lee el mensaje final del servidor y sale del bucle del juego
+                    entrada.readLine();
+                    return; // Salir al bucle principal
+                } else {
+                    return; // Salir al bucle principal
+                }
+            } else if (mensajeServidor.startsWith("INICIANDO JUEGO") || mensajeServidor.startsWith("El numero es") || mensajeServidor.startsWith("Caracter no valido") || mensajeServidor.startsWith("El numero debe estar")) {
+                // El juego está en progreso, pide un número
+                System.out.print("> ");
+                String intento = scanner.nextLine();
+                salida.println(intento);
+            }
+        }
+    }
+
+
+    private static void handleChat(BufferedReader entrada, PrintWriter salida, Scanner scanner) throws IOException {
+        String mensajeServidor = entrada.readLine(); // Lee el mensaje "INICIANDO CHAT"
+        if (mensajeServidor == null) return;
+        System.out.println(mensajeServidor);
+
+        // Hilo separado para escuchar mensajes del servidor
+        Thread listenThread = new Thread(() -> {
+            try {
+                String serverMsg;
+                while ((serverMsg = entrada.readLine()) != null) {
+                    System.out.println(serverMsg);
+                    if (serverMsg.startsWith("Servidor ha terminado el chat")) {
+                        break;
+                    }
+                }
+            } catch (IOException e) {
+                // El hilo principal manejará el mensaje final.
+            }
+        });
+        listenThread.setDaemon(true); // Permite que el programa se cierre si este hilo está en ejecución
+        listenThread.start();
+
+        // Hilo principal para leer la entrada del usuario y enviar mensajes al servidor
+        while (true) {
+            System.out.print("Tú: ");
+            String mensajeAEnviar = scanner.nextLine();
+            salida.println(mensajeAEnviar);
+            if (mensajeAEnviar.equalsIgnoreCase("salir")) {
+                System.out.println("Regresando al menu principal.");
+                break;
+            }
         }
     }
 }
