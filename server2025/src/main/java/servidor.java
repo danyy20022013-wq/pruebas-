@@ -1,327 +1,405 @@
 import java.io.*;
+import java.io.*;
 import java.net.*;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class servidor {
-
-    // =====================
-    // ENUM DE ESTADOS
-    // =====================
-    enum Estado {
-        INICIO,
-        RECIBIR_USUARIO,
-        RECIBIR_CONTRASENA,
-        CREAR_CUENTA,
-        AUTENTICACION_EXITOSA,
-        AUTENTICACION_FALLIDA,
-        MENU_PRINCIPAL,
-        INICIO_JUEGO,
-        JUGANDO,
-        GANASTE,
-        PERDISTE,
-        PREGUNTAR_REINICIO,
-        CHAT,
-        FIN
-    }
-
-    // =====================
-    // VARIABLES GLOBALES
-    // =====================
-    private static final String ARCHIVO_CREDENCIALES = "credenciales.txt";
-    private static final Map<String, String> credenciales = new HashMap<>();
     private static final int PUERTO = 5050;
+    private static final String ARCHIVO_CREDENCIALES = "credenciales.txt";
+    private static final String ARCHIVO_MENSAJES = "mensajes.txt";
 
-    // Chat multicliente
-    private static final Set<PrintWriter> clientes = Collections.synchronizedSet(new HashSet<>());
-    private static final List<String> historial = new CopyOnWriteArrayList<>();
+    private static Map<String, PrintWriter> clientesConectados = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
-        cargarCredenciales();
-        try (ServerSocket servidor = new ServerSocket(PUERTO)) {
-            System.out.println("Servidor iniciado en puerto " + PUERTO);
+        System.out.println("Servidor iniciado en el puerto " + PUERTO);
+
+        try (ServerSocket serverSocket = new ServerSocket(PUERTO)) {
             while (true) {
-                Socket socket = servidor.accept();
-                System.out.println("Cliente conectado: " + socket);
-                new Thread(new ManejadorSesion(socket)).start();
+                Socket socket = serverSocket.accept();
+                new Thread(new ManejadorCliente(socket)).start();
             }
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    // =====================
-    // MANEJADOR DE SESIÓN (LOGIN, JUEGO, MENÚ)
-    // =====================
-    private static class ManejadorSesion implements Runnable {
+    private static synchronized boolean usuarioExiste(String username) {
+        File f = new File(ARCHIVO_CREDENCIALES);
+        if (!f.exists()) return false;
+        try (BufferedReader reader = new BufferedReader(new FileReader(ARCHIVO_CREDENCIALES))) {
+            String linea;
+            while ((linea = reader.readLine()) != null) {
+                String[] partes = linea.split(":", 2);
+                if (partes.length >= 1 && partes[0].trim().equals(username)) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    private static synchronized void guardarCredencial(String username, String password) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(ARCHIVO_CREDENCIALES, true))) {
+            writer.write(username + ":" + password);
+            writer.newLine();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static synchronized boolean validarCredencial(String username, String password) {
+        File f = new File(ARCHIVO_CREDENCIALES);
+        if (!f.exists()) return false;
+        try (BufferedReader reader = new BufferedReader(new FileReader(ARCHIVO_CREDENCIALES))) {
+            String linea;
+            while ((linea = reader.readLine()) != null) {
+                String[] partes = linea.split(":", 2);
+                if (partes.length == 2 && partes[0].equals(username) && partes[1].equals(password)) {
+                    return true;
+                }
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    private static synchronized void guardarMensaje(String remitente, String destinatario, String mensaje) {
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(ARCHIVO_MENSAJES, true))) {
+            // formato: destinatario:remitente:mensaje
+            writer.write(destinatario + ":" + remitente + ":" + mensaje);
+            writer.newLine();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Devuelve la lista de mensajes dirigidos a username.
+     * Cada elemento tiene el formato: ID | remitente | mensaje
+     * ID corresponde a la línea (1-based) dentro de mensajes.txt
+     */
+    private static synchronized List<String> obtenerMensajes(String username) {
+        List<String> mensajes = new ArrayList<>();
+        File f = new File(ARCHIVO_MENSAJES);
+        if (!f.exists()) return mensajes;
+        try (BufferedReader reader = new BufferedReader(new FileReader(ARCHIVO_MENSAJES))) {
+            String linea;
+            int id = 1;
+            while ((linea = reader.readLine()) != null) {
+                String[] partes = linea.split(":", 3);
+                if (partes.length == 3) {
+                    String destinatario = partes[0];
+                    String remitente = partes[1];
+                    String cuerpo = partes[2];
+                    if (destinatario.equals(username)) {
+                        // formateamos para mostrar al usuario
+                        mensajes.add(id + " | " + remitente + " | " + cuerpo);
+                    }
+                }
+                id++;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return mensajes;
+    }
+
+    /**
+     * Borra la línea ID (1-based) del archivo mensajes.txt si pertenece a username (destinatario).
+     * Retorna true si borró algo.
+     */
+    private static synchronized boolean borrarMensaje(String username, int id) {
+        File archivo = new File(ARCHIVO_MENSAJES);
+        if (!archivo.exists()) return false;
+
+        File temp = new File("mensajes_temp.txt");
+        boolean borrado = false;
+
+        try (BufferedReader reader = new BufferedReader(new FileReader(archivo));
+             PrintWriter pw = new PrintWriter(new FileWriter(temp))) {
+
+            String linea;
+            int contador = 1;
+            while ((linea = reader.readLine()) != null) {
+                if (contador == id) {
+                    String[] partes = linea.split(":", 3);
+                    if (partes.length == 3 && partes[0].equals(username)) {
+                        // omitimos esta línea -> borrada
+                        borrado = true;
+                    } else {
+                        // no es tu mensaje, lo conservamos
+                        pw.println(linea);
+                    }
+                } else {
+                    pw.println(linea);
+                }
+                contador++;
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+
+        // reemplazar archivo
+        if (!archivo.delete()) {
+            // no se pudo borrar el original
+            temp.delete();
+            return false;
+        }
+        if (!temp.renameTo(archivo)) {
+            return false;
+        }
+        return borrado;
+    }
+
+    /**
+     * Elimina credencial y todos los mensajes donde aparezca como remitente o destinatario
+     */
+    private static synchronized void eliminarUsuario(String username) {
+        // editar credenciales
+        File cred = new File(ARCHIVO_CREDENCIALES);
+        if (cred.exists()) {
+            File temp = new File("cred_temp.txt");
+            try (BufferedReader br = new BufferedReader(new FileReader(cred));
+                 PrintWriter pw = new PrintWriter(new FileWriter(temp))) {
+                String linea;
+                while ((linea = br.readLine()) != null) {
+                    String[] partes = linea.split(":", 2);
+                    if (partes.length >= 1 && !partes[0].equals(username)) {
+                        pw.println(linea);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            cred.delete();
+            temp.renameTo(cred);
+        }
+
+        // editar mensajes: quitar líneas donde sea remitente O destinatario
+        File msgs = new File(ARCHIVO_MENSAJES);
+        if (msgs.exists()) {
+            File temp = new File("mensajes_temp.txt");
+            try (BufferedReader br = new BufferedReader(new FileReader(msgs));
+                 PrintWriter pw = new PrintWriter(new FileWriter(temp))) {
+                String linea;
+                while ((linea = br.readLine()) != null) {
+                    String[] partes = linea.split(":", 3);
+                    if (partes.length == 3) {
+                        String destinatario = partes[0];
+                        String remitente = partes[1];
+                        if (!destinatario.equals(username) && !remitente.equals(username)) {
+                            pw.println(linea);
+                        }
+                    } else {
+                        pw.println(linea);
+                    }
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            msgs.delete();
+            temp.renameTo(msgs);
+        }
+    }
+
+    private static class ManejadorCliente implements Runnable {
         private Socket socket;
-        private BufferedReader entrada;
-        private PrintWriter salida;
-        private String usuarioActual = "";
-        private Estado estado = Estado.INICIO;
-
+        private BufferedReader in;
+        private PrintWriter out;
+        private String username;
+        private boolean jugando = false;
         private int numeroSecreto;
-        private int intentos;
+        private int intentosRestantes;
 
-        public ManejadorSesion(Socket socket) {
+        public ManejadorCliente(Socket socket) {
             this.socket = socket;
         }
 
         @Override
         public void run() {
             try {
-                entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                salida = new PrintWriter(socket.getOutputStream(), true);
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
 
-                Random rand = new Random();
+                autenticar();
 
-                while (estado != Estado.FIN) {
-                    switch (estado) {
-                        case INICIO:
-                            salida.println("Bienvenido. Ingresa tu usuario o escribe 'nuevo' para crear una cuenta.");
-                            estado = Estado.RECIBIR_USUARIO;
-                            break;
+                // registrar canal de salida
+                clientesConectados.put(username, out);
 
-                        case RECIBIR_USUARIO:
-                            usuarioActual = entrada.readLine();
-                            if (usuarioActual == null) {
-                                estado = Estado.FIN;
-                                break;
-                            }
-                            if (usuarioActual.equalsIgnoreCase("nuevo")) {
-                                salida.println("Ingresa tu nuevo nombre de usuario:");
-                                estado = Estado.CREAR_CUENTA;
-                            } else if (credenciales.containsKey(usuarioActual)) {
-                                salida.println("Usuario recibido. Ahora, ingresa tu contrasena.");
-                                estado = Estado.RECIBIR_CONTRASENA;
-                            } else {
-                                salida.println("Usuario no encontrado. Por favor, intenta de nuevo.");
-                            }
-                            break;
+                mostrarMenu();
 
-                        case RECIBIR_CONTRASENA:
-                            String contrasena = entrada.readLine();
-                            if (contrasena == null) {
-                                estado = Estado.FIN;
-                                break;
-                            }
-                            if (credenciales.get(usuarioActual).equals(contrasena)) {
-                                estado = Estado.AUTENTICACION_EXITOSA;
-                            } else {
-                                estado = Estado.AUTENTICACION_FALLIDA;
-                            }
-                            break;
-
-                        case CREAR_CUENTA:
-                            String nuevoUsuario = usuarioActual;
-                            String nuevaContrasena = entrada.readLine();
-                            if (nuevoUsuario != null && nuevaContrasena != null && !credenciales.containsKey(nuevoUsuario)) {
-                                credenciales.put(nuevoUsuario, nuevaContrasena);
-                                guardarCredenciales();
-                                salida.println("¡Cuenta creada exitosamente! Ahora puedes iniciar sesion.");
-                                estado = Estado.INICIO;
-                            } else {
-                                salida.println("Error al crear la cuenta. El usuario ya existe o los datos son invalidos.");
-                                estado = Estado.INICIO;
-                            }
-                            break;
-
-                        case AUTENTICACION_FALLIDA:
-                            salida.println("Contrasena incorrecta. Intentalo de nuevo.");
-                            estado = Estado.INICIO;
-                            break;
-
-                        case AUTENTICACION_EXITOSA:
-                            salida.println("¡Inicio de sesion exitoso! Bienvenido, " + usuarioActual + ".");
-                            estado = Estado.MENU_PRINCIPAL;
-                            break;
-
-                        case MENU_PRINCIPAL:
-                            salida.println("MENU PRINCIPAL\n1. Jugar a adivinar el numero\n2. Chatear\n\nIngresa tu eleccion (1 o 2):");
-                            String eleccion = entrada.readLine();
-                            if (eleccion == null) {
-                                estado = Estado.FIN;
-                                break;
-                            }
-                            if (eleccion.equals("1")) {
-                                estado = Estado.INICIO_JUEGO;
-                            } else if (eleccion.equals("2")) {
-                                estado = Estado.CHAT;
-                            } else {
-                                salida.println("Opcion no valida.");
-                            }
-                            break;
-
-                        case INICIO_JUEGO:
-                            numeroSecreto = rand.nextInt(10) + 1;
-                            intentos = 0;
-                            salida.println("INICIANDO JUEGO\nAdivina un numero del 1 al 10. Tienes 3 intentos.");
-                            estado = Estado.JUGANDO;
-                            break;
-
-                        case JUGANDO:
-                            String msg = entrada.readLine();
-                            if (msg == null) {
-                                estado = Estado.FIN;
-                                break;
-                            }
-                            int numero;
-                            try {
-                                numero = Integer.parseInt(msg);
-                            } catch (NumberFormatException e) {
-                                salida.println("Caracter no válido. Ingresa un numero entre 1 y 10.");
-                                continue;
-                            }
-                            if (numero < 1 || numero > 10) {
-                                salida.println("El número debe estar entre 1 y 10.");
-                                continue;
-                            }
-                            intentos++;
-                            if (numero == numeroSecreto) {
-                                estado = Estado.GANASTE;
-                            } else if (intentos >= 3) {
-                                estado = Estado.PERDISTE;
-                            } else if (numero < numeroSecreto) {
-                                salida.println("El número es mayor. Te quedan " + (3 - intentos) + " intentos.");
-                            } else {
-                                salida.println("El número es menor. Te quedan " + (3 - intentos) + " intentos.");
-                            }
-                            break;
-
-                        case GANASTE:
-                            salida.println("¡ADIVINASTE! El numero era: " + numeroSecreto);
-                            estado = Estado.PREGUNTAR_REINICIO;
-                            break;
-
-                        case PERDISTE:
-                            salida.println("NO ADIVINASTE. El numero correcto era: " + numeroSecreto);
-                            estado = Estado.PREGUNTAR_REINICIO;
-                            break;
-
-                        case PREGUNTAR_REINICIO:
-                            salida.println("¿Quieres volver al menu principal? (si/no)");
-                            String resp = entrada.readLine();
-                            if (resp == null || resp.equalsIgnoreCase("no")) {
-                                salida.println("Adios, " + usuarioActual + ". Gracias por jugar.");
-                                estado = Estado.FIN;
-                            } else {
-                                estado = Estado.MENU_PRINCIPAL;
-                            }
-                            break;
-
-                        case CHAT:
-                            manejarChat();
-                            estado = Estado.MENU_PRINCIPAL;
-                            break;
-
-                        default:
-                            estado = Estado.FIN;
-                            break;
-                    }
-                }
-                socket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-
-        // =====================
-        // CHAT MULTICLIENTE
-        // =====================
-        private void manejarChat() {
-            salida.println("INICIANDO CHAT\nEscribe mensajes. Usa 'borrar <id>' para eliminar uno o 'salir' para volver al menu.");
-
-            synchronized (clientes) {
-                clientes.add(salida);
-            }
-            broadcast("[NOTIFICACION] " + usuarioActual + " se unió al chat.");
-
-            // enviar historial
-            for (int i = 0; i < historial.size(); i++) {
-                salida.println("#" + i + " " + historial.get(i));
-            }
-
-            try {
-                String mensaje;
-                while ((mensaje = entrada.readLine()) != null) {
-                    if (mensaje.equalsIgnoreCase("salir")) {
-                        break;
+                String input;
+                while ((input = in.readLine()) != null) {
+                    if (jugando) {
+                        procesarJuego(input);
+                        continue;
                     }
 
-                    if (mensaje.toLowerCase().startsWith("borrar")) {
-                        String[] partes = mensaje.split(" ");
-                        if (partes.length == 2) {
+                    if (input.equalsIgnoreCase("menu")) {
+                        mostrarMenu();
+
+                    } else if (input.equalsIgnoreCase("/inbox")) {
+                        mostrarMensajesPendientes();
+
+                    } else if (input.startsWith("/msg")) {
+                        String[] partes = input.split(" ", 3);
+                        if (partes.length < 3) {
+                            out.println("Uso correcto: /msg usuario mensaje");
+                        } else {
+                            String destino = partes[1];
+                            String mensaje = partes[2];
+                            if (usuarioExiste(destino)) {
+                                guardarMensaje(username, destino, mensaje);
+                                out.println("Mensaje enviado a " + destino);
+                            } else {
+                                out.println("Usuario no existente.");
+                            }
+                        }
+
+                    } else if (input.startsWith("/borrar")) {
+                        String[] partes = input.split(" ");
+                        if (partes.length != 2) {
+                            out.println("Uso correcto: /borrar id");
+                        } else {
                             try {
                                 int id = Integer.parseInt(partes[1]);
-                                if (id >= 0 && id < historial.size()) {
-                                    String borrado = historial.remove(id);
-                                    broadcast("[NOTIFICACION] " + usuarioActual + " borró el mensaje #" + id + ": " + borrado);
-                                } else {
-                                    salida.println("[NOTIFICACION] ID inválido.");
-                                }
+                                boolean ok = borrarMensaje(username, id);
+                                if (ok) out.println("Mensaje borrado (id " + id + ").");
+                                else out.println("No se encontró un mensaje tuyo con ese ID.");
                             } catch (NumberFormatException e) {
-                                salida.println("[NOTIFICACION] Uso correcto: borrar <id>");
+                                out.println("ID inválido.");
                             }
-                        } else {
-                            salida.println("[NOTIFICACION] Uso correcto: borrar <id>");
                         }
+
+                    } else if (input.equalsIgnoreCase("/eliminarme")) {
+                        eliminarUsuario(username);
+                        out.println("Tu cuenta y mensajes fueron eliminados. Adiós.");
+                        break;
+
+                    } else if (input.equalsIgnoreCase("jugar")) {
+                        iniciarJuego();
+
                     } else {
-                        String msgCompleto = usuarioActual + ": " + mensaje;
-                        historial.add(msgCompleto);
-                        broadcast("#" + (historial.size() - 1) + " " + msgCompleto);
+                        out.println("Comando no reconocido. Usa /msg, /borrar, /inbox, /eliminarme, jugar, menu");
                     }
                 }
             } catch (IOException e) {
-                e.printStackTrace();
+                // cliente desconectado
             } finally {
-                synchronized (clientes) {
-                    clientes.remove(salida);
+                if (username != null) {
+                    clientesConectados.remove(username);
                 }
-                broadcast("[NOTIFICACION] " + usuarioActual + " salió del chat.");
-            }
-        }
-
-        private void broadcast(String mensaje) {
-            synchronized (clientes) {
-                for (PrintWriter cliente : clientes) {
-                    cliente.println(mensaje);
+                try {
+                    socket.close();
+                } catch (IOException e) {
+                    e.printStackTrace();
                 }
             }
         }
-    }
 
-    // =====================
-    // MANEJO DE CREDENCIALES
-    // =====================
-    private static void cargarCredenciales() {
-        try (BufferedReader br = new BufferedReader(new FileReader(ARCHIVO_CREDENCIALES))) {
-            String linea;
-            while ((linea = br.readLine()) != null) {
-                if (linea.trim().isEmpty()) continue;
-                String[] partes = linea.split(":");
-                if (partes.length == 2) {
-                    credenciales.put(partes[0].trim(), partes[1].trim());
+        private void autenticar() throws IOException {
+            while (true) {
+                out.println("Bienvenido. Ingresa tu usuario o escribe 'nuevo' para crear una cuenta.");
+                String entrada = in.readLine();
+                if (entrada == null) return;
+
+                if (entrada.equalsIgnoreCase("nuevo")) {
+                    out.println("Ingresa tu nuevo nombre de usuario:");
+                    String nuevoUsuario = in.readLine();
+                    out.println("Ingresa tu nueva contraseña:");
+                    String nuevaContrasena = in.readLine();
+
+                    if (!usuarioExiste(nuevoUsuario)) {
+                        guardarCredencial(nuevoUsuario, nuevaContrasena);
+                        out.println("Cuenta creada exitosamente. Ahora inicia sesión.");
+                    } else {
+                        out.println("Error: el usuario ya existe.");
+                    }
+                } else {
+                    if (usuarioExiste(entrada)) {
+                        out.println("Ingresa tu contraseña:");
+                        String pass = in.readLine();
+                        if (validarCredencial(entrada, pass)) {
+                            username = entrada;
+                            out.println("Inicio de sesión exitoso. Bienvenido " + username);
+                            // mostrar mensajes pendientes al inicio de sesión
+                            mostrarMensajesPendientes();
+                            break;
+                        } else {
+                            out.println("Contraseña incorrecta.");
+                        }
+                    } else {
+                        out.println("Usuario no encontrado.");
+                    }
                 }
             }
-            System.out.println("Credenciales cargadas desde " + ARCHIVO_CREDENCIALES);
-        } catch (FileNotFoundException e) {
-            System.out.println("Archivo de credenciales no encontrado, se creará nuevo.");
-        } catch (IOException e) {
-            e.printStackTrace();
         }
-    }
 
-    private static void guardarCredenciales() {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(ARCHIVO_CREDENCIALES))) {
-            for (Map.Entry<String, String> entry : credenciales.entrySet()) {
-                bw.write(entry.getKey() + ":" + entry.getValue());
-                bw.newLine();
+        private void mostrarMenu() {
+            out.println("=== MENÚ PRINCIPAL ===");
+            out.println("Comandos disponibles:");
+            out.println("/msg usuario mensaje  -> Enviar mensaje privado");
+            out.println("/inbox                -> Ver mensajes recibidos");
+            out.println("/borrar id            -> Borrar mensaje por ID (usa el ID que ves en /inbox)");
+            out.println("/eliminarme           -> Eliminar tu cuenta y mensajes");
+            out.println("jugar                 -> Iniciar el juego de adivinar número (1-10, 3 intentos)");
+            out.println("menu                  -> Mostrar este menú otra vez");
+            out.println("=======================");
+        }
+
+        private void mostrarMensajesPendientes() {
+            List<String> mensajes = obtenerMensajes(username);
+            if (mensajes.isEmpty()) {
+                out.println("No tienes mensajes nuevos.");
+            } else {
+                out.println("Tu bandeja de entrada:");
+                for (String m : mensajes) {
+                    out.println(m);
+                }
             }
-            System.out.println("Credenciales guardadas.");
-        } catch (IOException e) {
-            e.printStackTrace();
+        }
+
+        private void iniciarJuego() {
+            jugando = true;
+            numeroSecreto = new Random().nextInt(10) + 1; // número entre 1 y 10
+            intentosRestantes = 3;
+            out.println("Adivina un número del 1 al 10. Tienes 3 intentos.");
+        }
+
+        private void procesarJuego(String input) {
+            try {
+                int intento = Integer.parseInt(input);
+
+                if (intento < 1 || intento > 10) {
+                    out.println("Solo puedes elegir números entre 1 y 10.");
+                    return;
+                }
+
+                intentosRestantes--;
+
+                if (intento < numeroSecreto) {
+                    out.println("El número es mayor. Te quedan " + intentosRestantes + " intentos");
+                } else if (intento > numeroSecreto) {
+                    out.println("El número es menor. Te quedan " + intentosRestantes + " intentos");
+                } else {
+                    out.println("Correcto. El número era " + numeroSecreto);
+                    jugando = false;
+                    return;
+                }
+
+                if (intentosRestantes == 0) {
+                    out.println("No adivinaste. El número era " + numeroSecreto);
+                    jugando = false;
+                }
+
+            } catch (NumberFormatException e) {
+                out.println("Ingresa un número válido entre 1 y 10.");
+            }
         }
     }
 }
-
-
