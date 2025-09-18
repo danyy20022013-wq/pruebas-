@@ -4,7 +4,7 @@ import java.util.*;
 
 public class cliente {
     private static final String HOST = "localhost";
-    private static final int PUERTO = 12345;
+    private static final int PUERTO = 5050;
 
     public static void main(String[] args) {
         try (Socket socket = new Socket(HOST, PUERTO);
@@ -12,6 +12,7 @@ public class cliente {
              PrintWriter salida = new PrintWriter(socket.getOutputStream(), true);
              Scanner scanner = new Scanner(System.in)) {
 
+            // Hilo para escuchar al servidor
             Thread escuchar = new Thread(() -> {
                 try {
                     String mensaje;
@@ -29,11 +30,13 @@ public class cliente {
             escuchar.setDaemon(true);
             escuchar.start();
 
+            // Entrada de usuario
             while (true) {
                 String mensaje = scanner.nextLine();
                 salida.println(mensaje);
                 if (mensaje.equalsIgnoreCase("salir")) break;
             }
+
         } catch (IOException e) {
             System.out.println("No se pudo conectar al servidor.");
         }
