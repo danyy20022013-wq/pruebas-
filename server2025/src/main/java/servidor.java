@@ -48,7 +48,13 @@ public class servidor {
                     if (mensaje.equalsIgnoreCase("salir")) {
                         break;
                     }
-                    broadcast(nombre + ": " + mensaje);
+
+                    // 🆕 Manejo del comando borrar
+                    if (mensaje.toLowerCase().startsWith("borrar")) {
+                        broadcast("[NOTIFICACION] " + nombre + " borró un mensaje.");
+                    } else {
+                        broadcast(nombre + ": " + mensaje);
+                    }
                 }
             } catch (IOException e) {
                 System.err.println("Error con cliente: " + e.getMessage());
