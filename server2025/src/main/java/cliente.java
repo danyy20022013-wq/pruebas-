@@ -1,38 +1,40 @@
-
-
-    import java.io.*;
+import java.io.*;
 import java.net.*;
+import java.util.Scanner;
 
-        public class cliente {
-            private static final String HOST = "127.0.0.1";
-            private static final int PUERTO = 5050;
+public class cliente {
+    public static void main(String[] args) {
+        String host = "localhost";
+        int puerto = 5050;
 
-            public static void main(String[] args) {
-                try (Socket socket = new Socket(HOST, PUERTO);
-                     BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                     PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                     BufferedReader teclado = new BufferedReader(new InputStreamReader(System.in))) {
+        try (Socket socket = new Socket(host, puerto)) {
+            BufferedReader entrada = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter salida = new PrintWriter(socket.getOutputStream(), true);
+            Scanner scanner = new Scanner(System.in);
 
-                    Thread lector = new Thread(() -> {
-                        String respuesta;
-                        try {
-                            while ((respuesta = in.readLine()) != null) {
-                                System.out.println(respuesta);
-                            }
-                        } catch (IOException e) {
-                            System.out.println("Conexión cerrada.");
-                        }
-                    });
-                    lector.start();
-
-                    String input;
-                    while ((input = teclado.readLine()) != null) {
-                        out.println(input);
-                        if (input.equals("0") || input.equalsIgnoreCase("exit")) break;
+            Thread listener = new Thread(() -> {
+                try {
+                    String msg;
+                    while ((msg = entrada.readLine()) != null) {
+                        System.out.println(msg);
                     }
-
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    // conexión cerrada
+                }
+            });
+            listener.setDaemon(true);
+            listener.start();
+
+            while (true) {
+                String input = scanner.nextLine();
+                salida.println(input);
+                if ("8".equalsIgnoreCase(input)) {
+                    break;
                 }
             }
+
+        } catch (IOException e) {
+            e.printStackTrace();
         }
+    }
+}

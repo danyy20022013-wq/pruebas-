@@ -1,3 +1,2 @@
-german:1234
 nuevo:yazmin
 alexa:1234
