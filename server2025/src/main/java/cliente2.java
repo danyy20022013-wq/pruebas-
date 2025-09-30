@@ -2,7 +2,7 @@ import java.io.*;
 import java.net.*;
 import java.util.Scanner;
 
-public class cliente {
+public class cliente2 {
     private static final String HOST = "localhost";
     private static final int PUERTO = 5050;
     private static String usuarioActual = null;

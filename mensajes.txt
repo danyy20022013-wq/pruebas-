@@ -6,3 +6,11 @@ algara:yazmin:ya tengo tu dinero
 daniel:yazmin:hola
 yazmin:daniel:hola
 pedro:juan:hola
+juan:Servidor:Archivo listo: 'laptop.txt' de 'pedro'. Usa la opción 11.
+juan:Servidor:Archivo listo: 'laptop.txt' de 'pedro'. Usa la opción 11.
+juan:Servidor:Archivo listo: 'laptop.txt' de 'pedro'. Usa la opción 11.
+juan:Servidor:Archivo listo: 'laptop.txt' de 'pedro'. Usa la opción 11.
+juan:Servidor:Archivo listo: 'laptop.txt' de 'pedro'. Usa la opción 11.
+juan:Servidor:Archivo listo: 'laptop.txt' de 'pedro'. Usa la opción 11.
+pedro:Servidor:Archivo listo: 'rubicon.txt' de 'cholos'. Usa la opción 11.
+juan:Servidor:Archivo listo: 'lamejorzaza.txt' de 'zaza'. Usa la opción 11.

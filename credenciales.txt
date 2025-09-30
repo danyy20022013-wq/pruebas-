@@ -3,3 +3,5 @@ algara:1234
 daniel:1234
 juan:1234
 pedro:1234
+cholos:1234
+zaza:1234

@@ -64,7 +64,9 @@ public class servidor {
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(ARCH_CRED, true))) {
             bw.write(usuario + ":" + pass);
             bw.newLine();
+            // Crear ambas carpetas personales para el nuevo usuario
             new File(DIR_USUARIOS + "/" + usuario).mkdirs();
+            new File(DIR_DESCARGAS + "/" + usuario).mkdirs();
             return true;
         } catch (IOException e) { e.printStackTrace(); return false; }
     }
@@ -182,6 +184,7 @@ public class servidor {
     }
 
     private static synchronized void eliminarCuentaCompleta(String usuario) {
+        // Eliminar de credenciales.txt
         File credFile = new File(ARCH_CRED);
         if (credFile.exists()) {
             File credTmp = new File(credFile.getName() + ".tmp");
@@ -198,6 +201,7 @@ public class servidor {
             credTmp.renameTo(credFile);
         }
 
+        // Eliminar mensajes
         File msgFile = new File(ARCH_MSG);
         if(msgFile.exists()) {
             File msgTmp = new File(msgFile.getName() + ".tmp");
@@ -216,6 +220,7 @@ public class servidor {
             msgTmp.renameTo(msgFile);
         }
 
+        // Eliminar bloqueos
         File blqFile = new File(ARCH_BLOQ);
         if (blqFile.exists()) {
             File blqTmp = new File(blqFile.getName() + ".tmp");
@@ -234,12 +239,20 @@ public class servidor {
             blqTmp.renameTo(blqFile);
         }
 
-        File userDir = new File(DIR_USUARIOS + "/" + usuario);
-        if (userDir.exists() && userDir.isDirectory()) {
-            for (File file : userDir.listFiles()) {
-                file.delete();
+        // Eliminar carpetas de usuario
+        deleteDirectory(new File(DIR_USUARIOS + "/" + usuario));
+        deleteDirectory(new File(DIR_DESCARGAS + "/" + usuario));
+    }
+
+    private static void deleteDirectory(File directory) {
+        if (directory.exists() && directory.isDirectory()) {
+            File[] files = directory.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    file.delete();
+                }
             }
-            userDir.delete();
+            directory.delete();
         }
     }
 
@@ -323,6 +336,9 @@ public class servidor {
                             if (validarCredencial(linea, pass)) {
                                 this.usuario = linea;
                                 clientesConectados.put(this.usuario, this);
+
+                                out.println("LOGIN_SUCCESS:" + this.usuario);
+
                                 out.println("✅ Inicio de sesión exitoso. Bienvenido " + this.usuario);
                                 List<PendingRequest> misSolicitudes = solicitudesPendientes.get(this.usuario);
                                 if (misSolicitudes != null && !misSolicitudes.isEmpty()) {
@@ -560,21 +576,24 @@ public class servidor {
             }
 
             out.println("Solicitudes pendientes:");
-            misSolicitudes.forEach(req -> {
+            for (int i = 0; i < misSolicitudes.size(); i++) {
+                PendingRequest req = misSolicitudes.get(i);
                 String accion = req.tipo.equals("list_files") ? "ver tu lista de archivos" : "descargar el archivo " + req.tipo.split(":",2)[1];
-                out.println("- " + req.solicitante + " quiere " + accion);
-            });
+                out.println((i + 1) + ". " + req.solicitante + " quiere " + accion);
+            }
 
-            out.print("Escribe el nombre del usuario para ACEPTAR su solicitud (o 'salir'): ");
+            out.print("Elige el NÚMERO de la solicitud a ACEPTAR (o 'salir'): ");
             String seleccion = in.readLine();
             if (seleccion == null || seleccion.equalsIgnoreCase("salir")) return;
 
-            Optional<PendingRequest> solicitudParaAceptar = misSolicitudes.stream()
-                    .filter(req -> req.solicitante.equals(seleccion))
-                    .findFirst();
+            try {
+                int index = Integer.parseInt(seleccion) - 1;
+                if (index < 0 || index >= misSolicitudes.size()) {
+                    out.println("Número de solicitud inválido.");
+                    return;
+                }
 
-            if (solicitudParaAceptar.isPresent()) {
-                PendingRequest req = solicitudParaAceptar.get();
+                PendingRequest req = misSolicitudes.get(index);
                 HandlerCliente solicitanteHandler = clientesConectados.get(req.solicitante);
 
                 if ("list_files".equals(req.tipo)) {
@@ -608,8 +627,7 @@ public class servidor {
                         return;
                     }
 
-                    String nombreArchivoDestino = "PARA_" + req.solicitante + "_DE_" + this.usuario + "_" + archivoFuente.getName();
-                    File archivoDestino = new File(DIR_DESCARGAS + "/" + nombreArchivoDestino);
+                    File archivoDestino = new File(DIR_USUARIOS+ "/" + req.solicitante + "/" + archivoFuente.getName());
                     Files.copy(archivoFuente.toPath(), archivoDestino.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
                     guardarMensaje("Servidor", req.solicitante, "Archivo listo: '" + nombreArchivoOriginal + "' de '" + this.usuario + "'. Usa la opción 11.");
@@ -617,15 +635,17 @@ public class servidor {
                     out.println("✅ Archivo compartido con éxito.");
                 }
                 misSolicitudes.remove(req);
-            } else {
-                out.println("No se encontró una solicitud pendiente de ese usuario.");
+            } catch (NumberFormatException e) {
+                out.println("Entrada inválida. Por favor, escribe el NÚMERO de la solicitud.");
+            } catch (IOException e) {
+                out.println("Error al procesar la solicitud: " + e.getMessage());
             }
         }
 
         private void opcionDescargarArchivos() throws IOException {
-            out.println("--- Archivos Compartidos para Descargar ---");
-            File dir = new File(DIR_DESCARGAS);
-            File[] archivos = dir.listFiles((d, name) -> name.startsWith("PARA_" + this.usuario));
+            out.println("--- Archivos en tu Bandeja de Descargas ---");
+            File dirUsuario = new File(DIR_DESCARGAS + "/" + this.usuario);
+            File[] archivos = dirUsuario.listFiles();
 
             if (archivos == null || archivos.length == 0) {
                 out.println("No hay archivos para ti en este momento.");
@@ -633,8 +653,9 @@ public class servidor {
             }
 
             Map<Integer, File> mapaArchivos = new HashMap<>();
+            out.println("Archivos disponibles:");
             for (int i = 0; i < archivos.length; i++) {
-                out.println((i + 1) + ". " + archivos[i].getName().replace("PARA_" + this.usuario + "_DE_", "De: "));
+                out.println((i + 1) + ". " + archivos[i].getName());
                 mapaArchivos.put(i + 1, archivos[i]);
             }
 
