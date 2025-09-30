@@ -1,3 +1,5 @@
-nuevo:yazmin
-alexa:1234
+yazmin:1234
+algara:1234
 daniel:1234
+juan:1234
+pedro:1234
